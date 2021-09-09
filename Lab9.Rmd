@@ -1,0 +1,981 @@
+---
+title: "Lab 9"
+author: "Saswata Haldar"
+output: word_document
+---
+
+MO:
+
+1what are the best predictors? age, exp, salary, edu
+
+1.1Deal with NAs
+
+Exit date,Exit type are exempted
+
+Grade- replace with stratified
+
+joining type-stratified replace
+
+retirement date-not sure
+
+joining salary- 0 rep by mean salary of that grade
+
+summary and calcc exp merge by add
+
+exNP - stratified replace
+
+marital status - drop
+
+gross salary - drop 2 0s and 3 NAs
+
+nps - drop column
+
+1.2. make numerical
+
+1.3 checck outliers, skewness, class imbalance
+
+1.4 discritize
+
+2 split
+
+2.1 bootstrap
+
+3. find best model
+
+
+
+
+Dependencies
+
+```{r}
+library(plyr)   #For count command
+library(dplyr)   #For aggregate commands if necessary
+library(reticulate)  #For python interfacing
+library(moments)  #for skewness check
+library(funModeling)   #For equal_freq function
+library(readxl)   #For reading Excel data
+library(stringr)   #For splitting strings
+library(modeest)   #For mode of data
+library(ggplot2)   #For dist plots
+library(tidyr)   #For gather function
+library(naivebayes)  #For all things NB
+library(caTools)
+library(e1071)   #For naiveBayes function
+library(caret)   #For confusionMatrix function
+library(rpart)   #For rpart
+library(rpart.plot)
+library(Rfast)
+library(fastDummies)
+library(party)
+library(randomForest)  #For randomforst model
+set.seed(7096)
+```
+
+```{r}
+#python dependencies
+sns <- import('seaborn')
+plt <- import('matplotlib.pyplot')
+pd <- import('pandas')
+```
+
+
+```{r}
+#homemade fuctions
+
+equal.freq.n<-function(nb,n){
+  nb<-equal_freq(nb,n)
+  print(unique(nb))
+  nb<-as.numeric(factor(nb,levels=unique(nb)))
+  return (nb)
+}
+
+get.f1<-function(cm){
+  cd<-caret::confusionMatrix(cm)
+  cdcm<-unlist(cd[2])
+  TN<-cdcm[1]
+  FN<-cdcm[2]
+  FP<-cdcm[3]
+  TP<-cdcm[4]
+  
+  precision =(TP)/(TP+FP)
+  recall_score =(FP)/(FP+TN)
+  f1_score=2*((precision*recall_score)/(precision+recall_score))
+  return (as.numeric(f1_score))
+}
+```
+
+
+Importing data
+
+```{r}
+setwd('C:/Users/SASWATA/Desktop/Study ebooks/Sem 6/CSE4029/LAB')
+dset<-read_xls('Lab9_data.xls')#,sep = "\t", header=TRUE)
+```
+
+
+Hypothesis: Whether an employee leaves the company depends primarily on their age, education, salary, experience and designation and very less on the other features.
+
+EDA:
+
+```{r}
+#data types and unique values
+
+dim(dset)
+str(dset)
+summary(dset)
+
+#Since NAs exist, we have to decide how to deal with them
+
+for (c in names(dset)){
+  print(plyr::count(dset[,c]))
+}
+
+
+```
+
+Judging from their unique values and in continuation of the hypothesis, Blood Group, Mealcard, FFC, Car Allowance are removed. So is DOB because we have age, a more direct feature.
+
+```{r}
+names(dset)
+exclude<-c("FFC","Car Allowance","MEALCARD","Date of Birth","Blood Group","NPS")
+include<- names(dset)[!names(dset) %in% exclude]
+dset<-dset[,include]
+```
+
+Dealing with NAs
+
+```{r}
+#Grade
+dset.gradeNA<-dset[!(dset$Grade=='NA'),]
+dim(dset.gradeNA)
+```
+
+```{r}
+#Confirming class representation
+for (c in names(dset.gradeNA)){
+  print(plyr::count(dset.gradeNA[,c]))
+}
+dset<-dset.gradeNA
+
+```
+
+```{r}
+#Marital Status
+dim(dset[is.na(dset$`Marital Status`),])
+dset.dont.marry<-dset[!is.na(dset$`Marital Status`),]
+for (c in names(dset.dont.marry)){
+  print(plyr::count(dset.dont.marry[,c]))
+}
+
+dset<-dset.dont.marry
+```
+
+```{r}
+#Gross Salary
+dset<-dset[!(dset$`Gross Salary`==0),]
+```
+
+
+
+```{r}
+#Joining Type
+jt<-plyr::count(dset$`Employee Joining Type`)
+jt$per<-jt$freq/dim(dset)[1]
+jt
+```
+
+```{r}
+0.6*139
+0.214*139
+```
+
+```{r}
+#Round 1
+s<-sample(pull(dset[is.na(dset$`Employee Joining Type`),],Sr.No),size=84)
+dset[dset$Sr.No %in% s,15]<-'Replace'
+jt<-plyr::count(dset$`Employee Joining Type`)
+jt$per<-jt$freq/dim(dset)[1]
+jt
+s<-sample(pull(dset[is.na(dset$`Employee Joining Type`),],Sr.No),size=30)
+dset[dset$Sr.No %in% s,15]<-'New Joinee'
+jt<-plyr::count(dset$`Employee Joining Type`)
+jt$per<-jt$freq/dim(dset)[1]
+jt
+```
+
+```{r}
+0.714*25
+0.252*25
+```
+
+```{r}
+#Round2
+s<-sample(pull(dset[is.na(dset$`Employee Joining Type`),],Sr.No),size=18)
+dset[dset$Sr.No %in% s,15]<-'Replace'
+jt<-plyr::count(dset$`Employee Joining Type`)
+jt$per<-jt$freq/dim(dset)[1]
+jt
+s<-sample(pull(dset[is.na(dset$`Employee Joining Type`),],Sr.No),size=7)
+dset[dset$Sr.No %in% s,15]<-'New Joinee'
+jt<-plyr::count(dset$`Employee Joining Type`)
+jt$per<-jt$freq/dim(dset)[1]
+jt
+```
+
+```{r}
+#Joining Salary
+names(dset)
+dset[is.na(dset$`Joining Salary`),18]<-0
+ad<-aggregate(dset$`Joining Salary`,list(pull(dset,Grade)),FUN="mean")
+ad
+max(dset$`Joining Salary`)
+```
+
+```{r}
+s<-pull(dset[dset$`Joining Salary`==0,],Sr.No)
+for (i in s){
+  g<-pull(dset[dset$Sr.No==i,],Grade)
+  dset[dset$Sr.No==i,18]<-as.numeric(ad[ad$Group.1==g,2])
+}
+plyr::count(dset$`Joining Salary`)
+```
+
+```{r}
+sns$pairplot(r_to_py(dset[,-1]),hue='Curr Status',palette=c('green','red'))
+plt$show()
+```
+
+From pairplot, it is clear that:
+
+1> The column 'Year of Passing' does not contribute in classification, so we will drop it.
+2> The majority of employees that left were from the minimum salary range, a few from the higher extremity too.
+
+
+```{r}
+#Year of Passing drop
+
+unique(dset$Grade)
+dset<-subset(dset,select=-c(`Year of Passing`))
+```
+
+
+```{r}
+#Emp age
+
+ages<-pull(dset,`Employee Age`)
+ages.split<-str_split(ages," ")
+ages.years<-c()
+for (i in 1:length(ages)){
+  
+  yi<-as.numeric(unlist(ages.split[i])[1])
+  ages.years<-append(ages.years,yi)
+}
+ages.years.freq<-equal.freq.n(ages.years,6)
+dset$`Employee Age`<-ages.years.freq
+unique(dset$`Employee Age`)
+class(dset$`Employee Age`)
+
+#Levels: [38,55] [35,38) [33,35) [31,33) [29,31) [22,29)
+```
+
+Checking what columns remain to convert:
+
+```{r}
+str(dset)
+```
+
+
+Slated for conversion: Marital status, Service agr., all Exp columns, qualification, emp status, emp join type, grade, level, dept, sub dept, gender, designation
+Drop title column
+
+
+```{r}
+#Marital status 1:married 0:single
+unique(dset$`Marital Status`)
+mar.temp<-ifelse(dset$`Marital Status`=="Married",yes=1,no=0)
+dset$`Marital Status`<-mar.temp
+```
+
+```{r}
+#Service agg.  0:Not Applicable 1:Applicable
+unique(dset$`Service Agreement`)
+agg.tmp<-ifelse(dset$`Service Agreement`=="Applicable",yes=1,no=0)
+dset$`Service Agreement`<-agg.tmp
+```
+
+```{r}
+names(dset)
+```
+
+
+```{r}
+#Exp columns, convert to numerical and merge
+
+unique(dset$`Summary Exp`)
+dset[is.na(dset$`Summary Exp`),19]<-"0"
+sum.exp<-dset$`Summary Exp`
+sum.exp<-str_trim(sum.exp)
+sum.exp.split<-str_split(sum.exp,"\\.")
+
+sum.exp.num<-c()
+y<-0
+for (i in sum.exp.split){
+  j<-1
+  y<-0
+  for (k in unlist(i)){
+    y<-y+(as.numeric(k))*j
+    j<-j/10
+  }
+  sum.exp.num<-append(sum.exp.num,y)
+}
+dset$`Summary Exp`<-sum.exp.num
+
+
+calc.exp<-dset$`Calculated Exp`
+calc.exp<-str_trim(calc.exp)
+calc.exp.split<-str_split(calc.exp,"\\.")
+
+calc.exp.num<-c()
+y<-0
+for (i in calc.exp.split){
+  j<-1
+  y<-0
+  for (k in unlist(i)){
+    y<-y+(as.numeric(k))*j
+    j<-j/10
+  }
+  calc.exp.num<-append(calc.exp.num,y)
+}
+dset$`Calculated Exp`<-calc.exp.num
+
+
+inho.exp<-dset$`In/HO Exp`
+inho.exp<-str_trim(inho.exp)
+inho.exp.split<-str_split(inho.exp,"\\.")
+
+inho.exp.num<-c()
+y<-0
+for (i in inho.exp.split){
+  j<-1
+  y<-0
+  for (k in unlist(i)){
+    y<-y+(as.numeric(k))*j
+    j<-j/10
+  }
+  inho.exp.num<-append(inho.exp.num,y)
+}
+dset$`In/HO Exp`<-inho.exp.num
+
+
+tota.exp<-dset$`Total Exp`
+tota.exp<-str_trim(tota.exp)
+tota.exp.split<-str_split(tota.exp,"\\.")
+
+tota.exp.num<-c()
+y<-0
+for (i in tota.exp.split){
+  j<-1
+  y<-0
+  for (k in unlist(i)){
+    y<-y+(as.numeric(k))*j
+    j<-j/10
+  }
+  tota.exp.num<-append(tota.exp.num,y)
+}
+dset$`Total Exp`<-tota.exp.num
+
+
+```
+
+```{r}
+#Checking if Summary and Calc experience could be merged
+
+hist(dset$`Summary Exp`)
+plyr::count(dset$`Summary Exp`)
+hist(dset$`Calculated Exp`)
+plyr::count(dset$`Calculated Exp`)
+
+#addign the columns will be a good choice as the 0s will be absorbed and the distribution will not change very much for Summary exp
+
+dset$`Summary Exp`<-dset$`Summary Exp`+dset$`Calculated Exp`
+dset<-subset(dset,select=-c(`Calculated Exp`))
+```
+
+Slated for conversion: Marital status, Service agr., all Exp columns, qualification, emp status, emp join type, grade, level, dept, sub dept, gender, designation
+Drop title column
+
+```{r}
+#Qualification
+unique(dset$Qualification)
+dset$Qualification<-as.numeric(factor(dset$Qualification,levels=unique(dset$Qualification),exclude=NULL))
+unique(dset$Qualification)
+
+```
+
+```{r}
+#Emp status
+
+unique(dset$`Curr Status`)
+dset$`Employee Status`<-as.numeric(factor(dset$`Employee Status`,levels=unique(dset$`Employee Status`),exclude=NULL))
+unique(dset$`Employee Status`)
+```
+
+
+```{r}
+#Joining type
+
+unique(dset$`Employee Joining Type`)
+dset$`Employee Joining Type`<-as.numeric(factor(dset$`Employee Joining Type`,levels=unique(dset$`Employee Joining Type`),exclude=NULL))
+unique(dset$`Employee Joining Type`)
+```
+
+
+```{r}
+#Level
+
+unique(dset$Level)
+dset$Level<-as.numeric(factor(dset$Level,levels=unique(dset$Level),exclude=NULL))
+unique(dset$Level)
+```
+
+```{r}
+#Grade
+
+unique(dset$Grade)
+dset$Grade<-as.numeric(factor(dset$Grade,levels=unique(dset$Grade),exclude=NULL))
+unique(dset$Grade)
+```
+
+```{r}
+#dept
+
+unique(dset$Department)
+dset$Department<-as.numeric(factor(dset$Department,levels=unique(dset$Department),exclude=NULL))
+unique(dset$Department)
+```
+
+#sub dept
+```{r}
+
+unique(dset$`Sub Department`)
+dset$`Sub Department`<-as.numeric(factor(dset$`Sub Department`,levels=unique(dset$`Sub Department`),exclude=NULL))
+unique(dset$`Sub Department`)
+```
+
+#gender
+```{r}
+
+unique(dset$Gender)
+dset$Gender<-as.numeric(factor(dset$Gender,levels=unique(dset$Gender),exclude=NULL))
+unique(dset$Gender)
+```
+
+#designation
+```{r}
+
+unique(dset$Designation)
+dset$Designation<-as.numeric(factor(dset$Designation,levels=unique(dset$Designation),exclude=NULL))
+unique(dset$Designation)
+```
+
+```{r}
+#Exit type
+
+unique(dset$`Exit Type`)
+dset$`Exit Type`<-as.numeric(factor(dset$`Exit Type`,levels=unique(dset$`Exit Type`),exclude=NULL))
+unique(dset$`Exit Type`)
+```
+
+I will be dropping Title as it is very irrelevant.
+
+```{r}
+names(dset)
+```
+
+Exit date will become, exited after.
+Date of Retirement will become days till retirement
+Date of Joining will become days since joining
+
+These will be more quantifiable
+
+Current date: 1 Nov, 2019 approx. (Courtesy of Kathal Aditya Rajendra)
+
+```{r}
+current.date<-as.Date(as.character("2019-09-01"))
+
+ed<-pull(dset,`Exit Date`)
+ed.ad<-as.Date(as.POSIXct(ed,"UTC"))
+
+rd<-pull(dset,`Date of Retirement`)
+rd.ad<-as.Date(as.POSIXct(rd,"UTC"))
+
+jd<-pull(dset,`Date of Joining`)
+jd.ad<-as.Date(as.POSIXct(jd,"UTC"))
+
+ea<-as.numeric(difftime(ed.ad,jd.ad,units = c("days")))
+dset$`Exited After`<-ea
+dset<-subset(dset,select=-c(`Exit Date`))
+
+dtr<-as.numeric(difftime(rd.ad,current.date,units = c("days")))
+dset$`Days Till Retirement`<-dtr
+dset<-subset(dset,select=-c(`Date of Retirement`))
+
+dsj<-as.numeric(difftime(current.date,jd.ad,units = c("days")))
+dset$`Days Since Joining`<-dsj
+dset<-subset(dset,select=-c(`Date of Joining`))
+
+```
+
+
+```{r}
+dset<-subset(dset,select=-c(4))
+```
+
+Removing remaining NAs
+
+```{r}
+dset[is.na(dset$`Exited After`),24]<-0
+```
+
+```{r}
+plyr::count(dset$`Exit Notice Period`)
+```
+
+```{r}
+#Exit notice can depend on dept, desig, level, grade. We will take the mode to replace NAs
+
+mode <- function(codes){
+  which.max(tabulate(codes))
+}
+
+enp.grade<-dset %>%
+  group_by(Grade) %>%
+  summarise(mode=mode(`Exit Notice Period`))
+
+enp.level<-dset %>%
+  group_by(Level) %>%
+  summarise(mode=mode(`Exit Notice Period`))
+
+enp.dept<-dset %>%
+  group_by(Department) %>%
+  summarise(mode=mode(`Exit Notice Period`))
+
+enp.dsig<-dset %>%
+  group_by(Designation) %>%
+  summarise(mode=mode(`Exit Notice Period`))
+
+
+#From the values it is clear, no matter how we take the mode we will get 90. So we apply 90 directly.
+
+names(dset)
+dset[is.na(dset$`Exit Notice Period`),19]<-90
+plyr::count(dset$`Exit Notice Period`)
+
+```
+
+```{r}
+for (c in names(dset)){
+  print(plyr::count(dset[,c]))
+}
+```
+```{r}
+#Dropping NAs in Total
+
+dim(dset)
+dset<-dset[!is.na(dset$Total),]
+dim(dset)
+
+```
+Finally the dataset is NA free.
+
+Re draw the pair plot.
+
+```{r}
+#sns$pairplot(r_to_py(dset[,-1]),hue='Curr Status',palette=c('green','red'))
+#plt$show()
+```
+
+```{r}
+
+class(dset$`Curr Status`)
+unique(dset$`Curr Status`)
+dset$`Curr Status`<-as.numeric(factor(dset$`Curr Status`,levels=unique(dset$`Curr Status`),exclude=NULL))
+class(dset$`Curr Status`)
+unique(dset$`Curr Status`)
+
+#seperating cont. and disc. data
+cont<-c("Joining Salary","Summary Exp","In/HO Exp","Total Exp","Gross Salary","Total","CTC","Days Till Retirement","Days Since Joining")
+```
+
+
+
+Before, classifying the columns into good and bad predictors, we will crete a benchmark from the cleaned data.
+
+```{r}
+#Creating the benchmark
+dset.cat.num<-dset[,-1]
+
+for (i in names(dset[,-1])[!names(dset[,-1]) %in% cont]){
+  ul<-unlist(pull(dset,i))
+  dset.cat.num[i]<-factor(ul,levels = unique(ul),exclude=NA)
+}
+dset.cat.num<-as.data.frame(dset.cat.num)
+
+bsplit<-sample.split(dset.cat.num,SplitRatio = 0.7)
+btrain<-subset(dset.cat.num, bsplit == "TRUE")
+btest<-subset(dset.cat.num, bsplit == "FALSE")
+
+nbc<-e1071::naiveBayes(`Curr Status`~.,data=btrain)
+nb.pred<-predict(nbc,newdata = btest)
+
+nb.cm<-table(btest$`Curr Status`,nb.pred)
+caret::confusionMatrix(nb.cm)
+print('F1-score: ')
+get.f1(nb.cm)
+
+```
+
+```{r}
+dtb<-rpart(`Curr Status`~.,data=btrain,method='class')
+rpart.plot(dtb,extra=106)
+
+test.pred<-predict(dtb,btest[,-1],type='class')
+cm<-table(btest$`Curr Status`,test.pred)
+confusionMatrix(cm)
+print('F1-score: ')
+get.f1(cm)
+```
+
+
+```{r}
+#Same data, only numerical
+dset<-as.data.frame(dset)
+split <- sample.split(dset[,-1], SplitRatio = 0.7)
+train <- subset(dset[,-1], split == "TRUE")
+test <- subset(dset[,-1], split == "FALSE")
+
+nb<-e1071::naiveBayes(as.factor(`Curr Status`)~.,data=train)
+n.pred<-predict(nb,newdata = test)
+
+n.cm<-table(test$`Curr Status`,n.pred)
+caret::confusionMatrix(n.cm)
+print('F1-score: ')
+get.f1(n.cm)
+```
+
+```{r}
+dt<-rpart(`Curr Status`~.,data=train,method='class')
+rpart.plot(dt,extra=106)
+
+t.pred<-predict(dt,test[,-1],type='class')
+cm2<-table(test$`Curr Status`,t.pred)
+confusionMatrix(cm2)
+print('F1-score: ')
+get.f1(cm2)
+```
+
+Our benchmark accuracy is ~96% but it does not imply anything as there is huge class imbalance and there is a 65% headstart for True Positives. The F1 score however is a better indication, which is 0 here. Meaning, the classifier is performing very bad. The decision tree is clearly useless.
+
+
+Exited After and Exit Type will not be good predictors. We will check just in case an inverse relation exists.
+
+```{r}
+dset %>%
+  tidyr::gather(-`Sr.No`,-`Curr Status`,key="var",value="value") %>%
+  ggplot(aes(x=`Sr.No`,y=value,colour=`Curr Status`)) +
+  geom_point() +
+  facet_wrap(~var,scales="free") +
+  theme_bw()
+```
+
+
+From the graph:
+
+1> Gender, Marietal status, Service agrement, join type, exit type,exit after are bad predictors.
+2> Gross salary, CTC, and Total all represent the same distribution so if we consider all three, the model will be biased. We will take CTC.
+3> Quaklification, dept, Total Exp,in/ho exp, Days till retirement, and days since joining are strong predictors.
+4> Age, grade, sub dept, joning salary, designation are weak predictors.
+
+```{r}
+exclude<-c("Grade","Marital Status","Service Agreement","Employee Joining Type","Exit Type","Exit Notice Period","Exited After")
+
+predictors<-dset[!names(dset) %in% exclude]
+pred<-as.data.frame(predictors)
+
+#Peek at the columns
+str(pred)
+
+```
+
+
+```{r}
+#new benchmark
+splitp <- sample.split(pred[,-1], SplitRatio = 0.7)
+ptrain <- subset(pred[,-1], splitp == "TRUE")
+ptest <- subset(pred[,-1], splitp == "FALSE")
+
+dtp<-rpart(`Curr Status`~.,data=ptrain,method='class')
+rpart.plot(dtp,extra=106)
+
+p.pred<-predict(dtp,ptest[,-1],type='class')
+pcm<-table(ptest$`Curr Status`,p.pred)
+confusionMatrix(pcm)
+print('F1-score: ')
+get.f1(pcm)
+```
+
+Both the models perform significantly better with numeric data. The bench mark accuracy is 81.33% and F1 score is 0.07.
+
+
+
+
+
+Checking the distributions of continuous variables for skewness,and repair any skewness found.
+
+```{r}
+for (i in names(pred)[names(pred) %in% cont]){
+  hist(pred[i])
+}
+pred.skews<-moments::skewness(pred[,cont])
+pred.skews
+```
+
+Huge skewness is seen. Repairing.
+
+```{r}
+pred.noskew<-pred
+
+pred.noskew$`Joining Salary`<-log10(pred.noskew$`Joining Salary`)
+pred.noskew$`Summary Exp`<-log10(pred.noskew$`Summary Exp`+1)
+pred.noskew$`In/HO Exp`<-log10(pred.noskew$`In/HO Exp`+1)
+pred.noskew$`Total Exp`<-sqrt(pred.noskew$`Total Exp`)
+pred.noskew$`Gross Salary`<-(1/pred.noskew$`Gross Salary`)
+pred.noskew$Total<-(1/pred.noskew$Total)
+pred.noskew$CTC<-(1/pred.noskew$CTC)
+pred.noskew$`Days Till Retirement`<-(sqrt(max(pred.noskew$`Days Till Retirement`+1)-pred.noskew$`Days Till Retirement`))
+#pred.noskew$`Days Since Joining`<-log10(pred.noskew$`Days Since Joining`+1)
+moments::skewness(pred.noskew[,cont])
+```
+
+
+
+From here on, we will try 3 combinations, 1> skew disc. 2> no-skew cont. 3> no-skew disc.
+
+
+1> skew discrete
+
+```{r}
+pred.sd<-pred
+
+pred.sd$`Joining Salary`<-equal.freq.n(pred.sd$`Joining Salary`,99)#74
+pred.sd$`Summary Exp`<-equal.freq.n(pred.sd$`Summary Exp`,5)#4
+pred.sd$`In/HO Exp`<-equal.freq.n(pred.sd$`In/HO Exp`,5)
+pred.sd$`Total Exp`<-equal.freq.n(pred.sd$`Total Exp`,6)
+pred.sd$`Gross Salary`<-equal.freq.n(pred.sd$`Gross Salary`,16)
+pred.sd$Total<-equal.freq.n(pred.sd$Total,15)
+pred.sd$CTC<-equal.freq.n(pred.sd$CTC,16)
+pred.sd$`Days Till Retirement`<-equal.freq.n(pred.sd$`Days Till Retirement`,20)
+pred.sd$`Days Since Joining`<-equal.freq.n(pred.sd$`Days Since Joining`,14)
+```
+
+```{r}
+#Train-Test Split
+sp1<- sample.split(pred.sd[,-1], SplitRatio = 0.7)
+ptr1 <- subset(pred.sd[,-1], sp1 == "TRUE")
+pte1 <- subset(pred.sd[,-1], sp1 == "FALSE")
+
+
+```
+
+```{r}
+#DTree 89 , 0.08
+dt1<-rpart(`Curr Status`~.,data=ptr1,method='class')
+rpart.plot(dt1,extra=106)
+
+pred1<-predict(dt1,pte1[,-1],type='class')
+dtcm1<-table(pte1$`Curr Status`,pred1)
+confusionMatrix(dtcm1)
+print('F1-score: ')
+get.f1(dtcm1)
+
+#NB 78, 0.23
+nb1<-e1071::naiveBayes(as.factor(`Curr Status`)~.,data=ptr1)
+npred1<-predict(nb1,newdata= pte1[,-1])
+nbcm1<-table(pte1$`Curr Status`,npred1)
+confusionMatrix(nbcm1)
+print('F1-score: ')
+get.f1(nbcm1)
+
+```
+
+
+2> no-skew continuous
+
+```{r}
+#Train-Test Split
+sp2<- sample.split(pred.noskew[,-1], SplitRatio = 0.7)
+ptr2 <- subset(pred.noskew[,-1], sp2 == "TRUE")
+pte2 <- subset(pred.noskew[,-1], sp2 == "FALSE")
+
+```
+
+```{r}
+#DTree 89, 0.145
+dt2<-rpart(`Curr Status`~.,data=ptr2,method='class')
+rpart.plot(dt1,extra=106)
+
+pred2<-predict(dt2,pte2[,-1],type='class')
+dtcm2<-table(pte2$`Curr Status`,pred2)
+confusionMatrix(dtcm2)
+print('F1-score: ')
+get.f1(dtcm2)
+
+#NB 67, 0/0
+nb2<-e1071::naiveBayes(as.factor(`Curr Status`)~.,data=ptr2)
+npred2<-predict(nb2,newdata= pte2[,-1])
+nbcm2<-table(pte2$`Curr Status`,npred2)
+confusionMatrix(nbcm2)
+print('F1-score: ')
+get.f1(nbcm2)
+```
+
+
+3> no-skew discrete
+
+```{r}
+#Discritize
+pred.nsd<-pred.noskew
+
+pred.nsd$`Joining Salary`<-equal.freq.n(pred.nsd$`Joining Salary`,99)#74
+pred.nsd$`Summary Exp`<-equal.freq.n(pred.nsd$`Summary Exp`,5)#4
+pred.nsd$`In/HO Exp`<-equal.freq.n(pred.nsd$`In/HO Exp`,5)
+pred.nsd$`Total Exp`<-equal.freq.n(pred.nsd$`Total Exp`,6)
+pred.nsd$`Gross Salary`<-equal.freq.n(pred.nsd$`Gross Salary`,16)
+pred.nsd$Total<-equal.freq.n(pred.nsd$Total,15)
+pred.nsd$CTC<-equal.freq.n(pred.nsd$CTC,16)
+pred.nsd$`Days Till Retirement`<-equal.freq.n(pred.nsd$`Days Till Retirement`,20)
+pred.nsd$`Days Since Joining`<-equal.freq.n(pred.nsd$`Days Since Joining`,14)
+```
+
+```{r}
+#Train-Test Split
+sp3<- sample.split(pred.nsd[,-1], SplitRatio = 0.7)
+ptr3 <- subset(pred.nsd[,-1], sp3 == "TRUE")
+pte3 <- subset(pred.nsd[,-1], sp3 == "FALSE")
+
+```
+
+```{r}
+#DTree 85, 0.144
+dt3<-rpart(`Curr Status`~.,data=ptr3,method='class')
+rpart.plot(dt1,extra=106)
+
+pred3<-predict(dt3,pte3[,-1],type='class')
+dtcm3<-table(pte3$`Curr Status`,pred3)
+confusionMatrix(dtcm3)
+print('F1-score: ')
+get.f1(dtcm3)
+
+#NB 70, 0.30
+nb3<-e1071::naiveBayes(as.factor(`Curr Status`)~.,data=ptr3)
+npred3<-predict(nb3,newdata= pte3[,-1])
+nbcm3<-table(pte3$`Curr Status`,npred3)
+confusionMatrix(nbcm3)
+print('F1-score: ')
+get.f1(nbcm3)
+```
+
+Since the 3rd representation of data gives the best results for both classifiers, we will probe further into this arrangement and see better models for classification.
+
+
+1> Bernoulli NB
+
+```{r}
+pred.dummy<- fastDummies::dummy_cols(pred.nsd, select_columns = names(pred.nsd[,-1]),remove_first_dummy = TRUE)
+pred.dummy<-pred.dummy[,20:ncol(pred.dummy)]
+```
+
+```{r}
+#Train-Test Split
+sp4<- sample.split(pred.dummy, SplitRatio = 0.7)
+ptr4 <- subset(pred.dummy, sp4 == "TRUE")
+pte4 <- subset(pred.dummy, sp4 == "FALSE")
+
+```
+
+```{r}
+bnb<-bernoulli_naive_bayes(as.matrix(ptr4[,-1]),as.factor(ptr4[,1]),laplace=1)
+bnb.pred<-predict(bnb,newdata = as.matrix(pte4[,-1]))
+bnb.cm<-table(pte4$`Curr Status_2`,bnb.pred)
+confusionMatrix(bnb.cm)
+print("F1 score: ")
+get.f1(bnb.cm)
+
+#78, 0.165
+```
+
+
+2>One-hot random forest
+
+```{r}
+set.seed(6907)
+
+n<-names(pred)
+for (i in 1:length(n)){
+  n[i]<-gsub(" ","\\.",n[i])
+}
+names(pred)<-n
+names(pred)[13]<-"inho.exp"
+
+new<-sample.split(pred,SplitRatio = 0.8)
+rf.train<-subset(pred,new=="TRUE")
+rf.test<-subset(pred,new=="FALSE")
+
+rf<-randomForest::randomForest(as.factor(`Curr.Status`)~.,data=rf.train[,-1])
+rf.pred = predict(rf, newdata=rf.test[,-c(1,2)],type='class')
+rfcm<-table(rf.test$`Curr.Status`,rf.pred)
+confusionMatrix(rfcm)
+get.f1(rfcm)
+
+```
+
+
+```{r}
+
+n<-names(pred.nsd)
+for (i in 1:length(n)){
+  n[i]<-gsub(" ","\\.",n[i])
+}
+names(pred.nsd)<-n
+names(pred.nsd)[13]<-"inho.exp"
+
+new1<-sample.split(pred.nsd,SplitRatio = 0.8)
+rf.nsd.train<-subset(pred.nsd,new1=="TRUE")
+rf.nsd.test<-subset(pred.nsd,new1=="FALSE")
+
+rf.nsd<-randomForest::randomForest(as.factor(`Curr.Status`)~.,data=rf.nsd.train[,-1])
+rf.nsd.pred.nsd = predict(rf.nsd, newdata=rf.nsd.test[,-c(1,2)],type='class')
+rf.nsdcm<-table(rf.nsd.test$`Curr.Status`,rf.nsd.pred.nsd)
+confusionMatrix(rf.nsdcm)
+get.f1(rf.nsdcm)
+
+```
+
+
+```{r}
+rf.train$Curr.Status<-rf.train$Curr.Status-1
+lm<-glm(Curr.Status~.,data=rf.train[,-1],family = "binomial")
+lm.pred<-predict(lm,newdata = rf.test[,-c(1,2)])
+lm.pred<-as.numeric(lm.pred)
+lm.pred<-ifelse(lm.pred< -0.590,yes=0,no=1)
+lm.cm<-table((rf.test$Curr.Status-1),lm.pred)
+confusionMatrix(lm.cm)
+get.f1(lm.cm)
+```
+
+The decision tree clearly perform better than other clasifiers, this can be asserted without comparing further models as.
+1> It handles class imbalance the best.
+2> Uses bootstrap.
+3> Is not sensitive to skewness.
+
+The reason the accuracy is not moving over 0.90 is because when we use binning, the important classes for the predictors get grouped up with noise.

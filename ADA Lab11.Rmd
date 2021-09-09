@@ -1,0 +1,218 @@
+---
+title: "Lab11"
+output: word_document
+---
+
+```{r}
+
+#dependencies
+
+library(RTextTools)
+library(textreadr) 
+library(rvest) 
+library(tm)
+library(topicmodels) 
+library(reshape2) 
+library(ggplot2) 
+library(wordcloud) 
+library(pals) 
+library(dplyr) 
+library(tidyverse) 
+library(cluster)
+library(pheatmap) 
+library(stringr) 
+library(rJava) 
+library(openNLP) 
+library(NLP) 
+library(magrittr)
+library(corpus)
+library(lsa)
+library(factoextra)
+
+
+```
+
+
+
+
+```{r}
+#Question 1
+
+#reading text from the given URL
+text <- read_html("https://en.wikipedia.org/wiki/Yoga")
+#Selecting only <p> tags from the dataset
+text_body <- text %>% html_node("body") %>% html_elements("p")%>%html_text2()
+#removing empty paragraph tags
+text_body <- text_body[str_length(text_body) != 0 ]
+
+
+#removing extra space before and after string
+#removing citations in the form of [4] , [number]
+#removing symbols that act as escape character \" , \' , \t , \n
+
+text_body <- text_body %>%
+  str_replace_all(pattern = "\n", replacement = " ") %>%
+  str_replace_all(pattern = "[\\^]", replacement = " ") %>%
+  str_replace_all(pattern = "\\W\\d+\\W", replacement = " ") %>%
+  str_replace_all(pattern = "\"", replacement = " ") %>%
+  str_replace_all(pattern = "[^\\x01-\\x7F]+", replacement = " ") %>%
+  str_replace_all(pattern = "[{;} , {/} , {\\} , {:} , {(} , {)}]" , replacement = " ") %>%
+  str_replace_all(pattern = "\\s+", replacement = " ") %>%
+  str_trim(side = "both")
+
+#converting paragraph into sentences
+text_combined <- paste(text_body , collapse = " ")
+text_string <- as.String(text_combined)
+sent_token_annotator <- Maxent_Sent_Token_Annotator()
+sentences <- NLP::annotate(text_string, list(sent_token_annotator))
+#final output in form of sentences from paragraphs
+final_output <- text_string[sentences]
+final_output
+
+
+
+```
+
+
+```{r}
+#Question 2
+
+set.seed(1234)
+LSAdata <-Corpus(DirSource("C:/Users/SASWATA/Desktop/Lab11Datasets/Q2-LSA"))
+summary(LSAdata)
+n=length(LSAdata)
+
+for(i in 1:n){
+print(LSAdata[[i]]$content)
+}
+
+LSAdata <- tm_map(LSAdata, removeNumbers)
+LSAdata <- tm_map(LSAdata, removePunctuation)
+LSAdata <- tm_map(LSAdata , stripWhitespace)
+LSAdata <- tm_map(LSAdata, tolower)
+LSAdata <- tm_map(LSAdata, removeWords, stopwords("english"))
+
+adtm <-DocumentTermMatrix(LSAdata)
+inspect(adtm)
+
+inspect(removeSparseTerms(adtm, 0.75))
+adtm <- removeSparseTerms(adtm, 0.75)
+
+newLSA <- lsa(adtm)
+summary(newLSA)
+
+#Matrix M of the size m×n is then decomposed via a singular value decomposition into: term vector matrix T (constituting left singular vectors), the document vector matrix D (constituting right singular vectors) being both orthonormal, and the diagonal matrix S (constituting singular values).
+#These matrices are then reduced to the given number of dimensions k = dims to result into truncated matrices Tk, Sk and Dk — the latent semantic space.
+#If these matrices Tk, Sk, Dk were multiplied, they would give a new matrix Mk (of the same format as M, i.e., rows are the same terms, columns are the same documents), which is the least-squares best fit approximation of M with k singular values
+
+txtmatrix<- as.textmatrix( newLSA )
+
+
+fviz_nbclust(newLSA$dk, kmeans, method = "wss") +
+  geom_vline(xintercept = 4, linetype = 2)
+
+km.res <- kmeans(newLSA$dk, 4, nstart = 25)
+print(km.res)
+
+km.res$cluster
+km.res$centers
+km.res$size
+
+fviz_cluster(km.res, data = newLSA$dk,
+             palette = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"),
+             ellipse.type = "euclid", # Concentration ellipse
+             star.plot = TRUE, # Add segments from centroids to items
+             repel = TRUE, # Avoid label overplotting (slow)
+             ggtheme = theme_minimal()
+)
+
+
+```
+
+
+
+```{r}
+#@uestion 3
+
+set.seed(7096)
+LDAcorpus <-Corpus(DirSource("C:/Users/SASWATA/Desktop/Lab11Datasets/Q3-LDA"))
+summary(LDAcorpus)
+n=length(LDAcorpus)
+
+for(i in 1:n){
+print(LDAcorpus[[i]]$content)
+}
+
+LDAcorpus <- tm_map(LDAcorpus, removeNumbers)
+LDAcorpus <- tm_map(LDAcorpus, removePunctuation)
+LDAcorpus <- tm_map(LDAcorpus , stripWhitespace)
+LDAcorpus <- tm_map(LDAcorpus, tolower)
+LDAcorpus <- tm_map(LDAcorpus, removeWords, stopwords("english"))
+
+LDAdtm <-DocumentTermMatrix(LDAcorpus)
+inspect(LDAdtm)
+
+#inspect(removeSparseTerms(LDAdtm, 0.75))
+#LDAdtm <- removeSparseTerms(LDAdtm, 0.75)
+
+topicModel <- LDA(LDAdtm, K, method="Gibbs", control=list(iter = 500, verbose = 25))
+terms(topicModel,10)
+
+tmResult <- posterior(topicModel)
+topics <- c("Food","Indian Politics","Sports","Politics")
+
+prob <- tmResult$topics
+prob
+
+dendo<-as.matrix(prob)
+colnames(dendo)<-topics
+heatmap(dendo, scale="none",cexRow=1.2,cexCol=1.2)
+
+```
+
+
+```{r}
+#Question 4
+
+dset<-read.csv('C:/Users/SASWATA/Desktop/Lab11Datasets/Q4-Classification_AlgorithmsQ4-Classification_Algorithms-CNAE9.csv')
+dim(dset)
+
+dsetn<-data.frame(dset[1])
+for (i in 2:(dim(dset)[2])){
+  sa<-paste("V_",i,sep="")
+  temp<-as.vector(apply(as.matrix(dset[i],mode="character"),1,paste,sa,sep="",colapse=""))
+  dsetn<-cbind(dsetn,temp)
+  names(dsetn)[i]=paste("vaar_",i,sep="")
+}
+
+```
+```{r}
+apply(dset,2,unique)
+```
+
+
+
+```{r}
+#term-document Matrix
+tc<-dsetn[1]
+
+matrIx<-create_matrix(dsetn,language="english",removeNumbers=FALSE, stemWords=FALSE, removePunctuation=FALSE)
+
+container<-create_container(matrIx, t(tc),trainSize=1:659,testSize=660:1079,virgin=FALSE)
+
+models<-train_models(container,algorithms=c("NNET","SVM","GLMNET","SLDA","TREE","BOOSTING","RF"))
+#throws errors on GLMNET and Bagging
+
+
+results<-classify_models(container,models)
+analytics<- create_analytics(container,results)
+
+#analytics$algorithm_summary
+
+```
+
+```{r}
+analytics
+```
+
+
